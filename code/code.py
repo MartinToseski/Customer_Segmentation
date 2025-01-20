@@ -4,12 +4,13 @@ from google.colab import drive
 
 # Database Link -> https://www.kaggle.com/datasets/vetrirah/customer
 # Data Path (Google Drive)
+# !!! FIX DATA PATH TO WORK FROM A FILE IN THE SAME FOLDER INSTEAD OF THROUGH GOOGLE DRIVE !!!
 data_path = "/content/drive/My Drive/Customer_Segmentation/data/"
 
-rNum = 0
-cNum = 0
-num_components = 3
-trainingData = []
+rNum = 0 #number of rows
+cNum = 0 #number of columns
+num_components = 3 #reducing the dataset dimensions to this many dimensions (PCA)
+trainingData = [] #storing the data
 
 # Read data from dataset
 # The dataset is in the same folder as the .py file
@@ -38,96 +39,60 @@ def GetValues(trainingData, i):
         for j in range(len(ls)):
             if trainingData[i][index] == ls[j]:
                 find_list = True
-        if not find_list:
+        if not find_list: #don't store duplicates
             ls.append(trainingData[i][index])
     return ls
 
 
 
-# Replace non-numeric values with numbers (to use in PCA)
-def ReplaceNonNumeric(trainingData):
-    #replace gender data
-    gender_index = 0
-    for i in range(len(trainingData[0])):
-        if (trainingData[0][i] == "Gender"):
-            gender_index = i
-    for i in range(1, len(trainingData)):
-        if trainingData[i][gender_index] == 'Male':
-            trainingData[i][gender_index] = 1
-        elif trainingData[i][gender_index] == 'Female':
-            trainingData[i][gender_index] = 0
+# Replace all values with numbers 
+# the numbers are centered around 0
+def ReplaceWordsWithNumbers(trainingData, index):
+    values = GetValues(trainingData, index) #get all unique values written in the data
+    if (len(values) == 2):
+        cnt = 0
+    else:
+        cnt = -int(len(values)/2)
 
-    #replace married data
-    married_index = 0
-    for i in range(len(trainingData[0])):
-        if (trainingData[0][i] == "Ever_Married"):
-            married_index = i
-    for i in range(1, len(trainingData)):
-        if trainingData[i][married_index] == 'Yes':
-            trainingData[i][married_index] = 1
-        elif trainingData[i][married_index] == 'No':
-            trainingData[i][married_index] = 0
-
-    #replace graduated data
-    graduated_index = 0
-    for i in range(len(trainingData[0])):
-        if (trainingData[0][i] == "Graduated"):
-            graduated_index = i
-    for i in range(1, len(trainingData)):
-        if trainingData[i][graduated_index] == 'Yes':
-            trainingData[i][graduated_index] = 1
-        elif trainingData[i][graduated_index] == 'No':
-            trainingData[i][graduated_index] = 0
-
-    #replace profession data
-    #get list of values for profession
-    profession_index = 0
-    for i in range(len(trainingData[0])):
-        if (trainingData[0][i] == "Profession"):
-            profession_index = i
-
-    professions = GetValues(trainingData, profession_index)
-    cnt = -int(len(professions)/2)
-
-    for i in range(len(professions)):
+    for i in range(len(values)):
         for j in range(1, len(trainingData)):
-            if trainingData[j][profession_index] == professions[i]:
-                trainingData[j][profession_index] = cnt
-        cnt += 1
-
-    #replace spending data
-    #get list of values for spending score
-    spending_index = 0
-    for i in range(len(trainingData[0])):
-        if (trainingData[0][i] == "Spending_Score"):
-            spending_index = i
-
-    spending_scores = GetValues(trainingData, spending_index)
-    cnt = -int(len(spending_scores)/2)
-
-    for i in range(len(spending_scores)):
-        for j in range(1, len(trainingData)):
-            if trainingData[j][spending_index] == spending_scores[i]:
-                trainingData[j][spending_index] = cnt
-        cnt += 1
-
+            if trainingData[j][index] == values[i]:
+                trainingData[j][index] = cnt
+        cnt+=1
+    
     return trainingData
 
 
 
-# Replace rows with missing values (except for the profession column)
+# Replace non-numeric values with numbers (to use in PCA)
+def ReplaceNonNumeric(trainingData):
+    for i in range(len(trainingData[0])):
+        try:
+            # Try converting to int first (if fails, try float)
+            int(trainingData[1][i])
+            continue
+        except ValueError:
+            try:
+                float(trainingData[1][i])
+                continue
+            except ValueError:
+                trainingData = ReplaceWordsWithNumbers(trainingData, i)
+    return trainingData
+
+
+
+# Remove rows with missing values except for the profession column - empty fields are regarded as not employed
 def RemoveInvalidRows(trainingData):
     profession_index = 0
     for i in range(len(trainingData[0])):
         if (trainingData[0][i] == "Profession"):
             profession_index = i
-    # Keep rows where all values are non-empty, except for the 'Profession' column
     trainingData = [row for row in trainingData if all(value != '' for idx, value in enumerate(row) if idx != profession_index)]
     return trainingData
 
 
 
-# Remove unnecessary columns (ID, Var_1, Segmentation)
+# Remove unnecessary columns - ID, Var_1, Segmentation)
 def RemoveColumns(trainingData):
     return [row[1:-2] for row in trainingData]
 
@@ -145,113 +110,46 @@ def GetStringNumbers(trainingData):
 
 
 
-def ScaleNumbers(trainingData):
-    profession_index = 0
-    for i in range(len(trainingData[0])):
-        if (trainingData[0][i] == "Profession"):
-            profession_index = i
+def ScaleNumbers(trainingData, index):
+    values = GetValues(trainingData, index)
+    if (len(values) == 2):
+        cnt = 0
+    else:
+        cnt = -int(len(values)/2)
 
-    professions = GetValues(trainingData, profession_index)
-    min = -int(len(professions)/2)
-    max = min+len(professions)-1
-    cnt = min
+    min = cnt
+    max = min+len(values)-1
 
-    for i in range(len(professions)):
+    for i in range(len(values)):
         for j in range(1, len(trainingData)):
-            if trainingData[j][profession_index] == professions[i]:
-                #scale profession values to [0, 1]
-                # x' = (x-minx)/(xmax-xmin)
-                trainingData[j][profession_index] = (cnt-min)/(max-min)
-        cnt += 1
-
-    #replace spending data
-    #get list of values for spending score
-    spending_index = 0
-    for i in range(len(trainingData[0])):
-        if (trainingData[0][i] == "Spending_Score"):
-            spending_index = i
-
-    spending_scores = GetValues(trainingData, spending_index)
-    min = -int(len(spending_scores)/2)
-    max = min+len(spending_scores)-1
-    cnt = min
-
-    for i in range(len(spending_scores)):
-        for j in range(1, len(trainingData)):
-            if trainingData[j][spending_index] == spending_scores[i]:
-                #scale spending score values to [0, 1]
-                trainingData[j][spending_index] = (cnt-min)/(max-min)
-        cnt += 1
-
-    #scale age values to [0, 1]
-    age_index = 0
-    for i in range(len(trainingData[0])):
-        if (trainingData[0][i] == "Age"):
-            age_index = i
-
-    min = trainingData[1][age_index]
-    max = trainingData[1][age_index]
-    for i in range(1, len(trainingData)):
-        if (trainingData[i][age_index] > max):
-            max = trainingData[i][age_index]
-        if (trainingData[i][age_index] < min):
-            min = trainingData[i][age_index]
-            
-    for i in range(1, len(trainingData)):
-        trainingData[i][age_index] = (trainingData[i][age_index]-min)/(max-min)
-
-    #scale work experience values to [0, 1]
-    experience_index = 0
-    for i in range(len(trainingData[0])):
-        if (trainingData[0][i] == "Work_Experience"):
-            experience_index = i
-
-    min = trainingData[1][experience_index]
-    max = trainingData[1][experience_index]
-    for i in range(1, len(trainingData)):
-        if (trainingData[i][experience_index] > max):
-            max = trainingData[i][experience_index]
-        if (trainingData[i][experience_index] < min):
-            min = trainingData[i][experience_index]
-            
-    for i in range(1, len(trainingData)):
-        trainingData[i][experience_index] = (trainingData[i][experience_index]-min)/(max-min)
-
-    #scale family values to [0, 1]
-    family_index = 0
-    for i in range(len(trainingData[0])):
-        if (trainingData[0][i] == "Family_Size"):
-            family_index = i
-
-    min = trainingData[1][family_index]
-    max = trainingData[1][family_index]
-    for i in range(1, len(trainingData)):
-        if (trainingData[i][family_index] > max):
-            max = trainingData[i][family_index]
-        if (trainingData[i][family_index] < min):
-            min = trainingData[i][family_index]
-            
-    for i in range(1, len(trainingData)):
-        trainingData[i][family_index] = (trainingData[i][family_index]-min)/(max-min)
-
+            if trainingData[j][index] == values[i]:
+                #scale values to [0, 1]
+                # x_scaled = (x-minx)/(xmax-xmin)
+                trainingData[j][index] = (cnt-min)/(max-min)
+        cnt+=1
+    
     return trainingData
 
+# !!! IMPLEMENT MORE EFFICIENTLY/ASTHETICALLY !!!
+def ScaleColumnValues(trainingData):
+    for i in range(len(trainingData[0])):
+        trainingData = ScaleNumbers(trainingData, i)
+    return trainingData
+    
 
 
 # Clean the Dataset
 def CleanData(trainingData):
-    #Remove rows if something except Profession is missing
     trainingData = RemoveColumns(trainingData)
     trainingData = RemoveInvalidRows(trainingData)
     trainingData = ReplaceNonNumeric(trainingData)
     trainingData = GetStringNumbers(trainingData)
-    trainingData = ScaleNumbers(trainingData)
-    #scale all data values to a unit interval so that the PCA is not affected incorrectly from the start
+    trainingData = ScaleColumnValues(trainingData)
     return trainingData
 
 
 
-#Reduce the dimensions to only 3 (so it will be easy to visualize)
+#Reduce the dimensions to the given number of components
 def PCA(trainingData, num_components):
     #get mean values for all parameters across x axis
     mean_values = [0 for i in range(len(trainingData[0]))]
@@ -291,19 +189,21 @@ def PCA(trainingData, num_components):
         print(row)
     print()
 
-    #find the eigenvectors and corresponding eigenvalues, sort them and get the first k largest
-
-
-    #eigenvalues, eigenvectors = np.linalg.eigh(covariance_matrix)
+    #find the eigenvectors and corresponding eigenvalues, sort them and get the first k(=num_components) largest
+    print("Eigenvectors and eigenvalues")
     return
 
-# PCA
-# 2. Find the covariance matrix
-# 3. Find the first k biggest eigenvectors and their values
-# 4. Project the data
 
 
 # K-Means Clustering
+
+
+
+# Testing
+
+
+
+# Visualize the results
 
 
 
@@ -314,7 +214,7 @@ print(rNum)
 print("Number of columns (parameters) in dataset:")
 print(cNum)
 print("All parameters in datase:")
-print(trainingData)
+print(trainingData[0])
 print()
 
 cleanedData = CleanData(trainingData)
