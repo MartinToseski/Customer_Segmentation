@@ -1,13 +1,14 @@
+import os
 import numpy as np
 import matplotlib.pyplot as plt
 import csv
-from google.colab import drive
 import plotly.graph_objects as go
 
 # Database Link -> https://www.kaggle.com/datasets/vetrirah/customer
 # Data Path (Google Drive)
 # !!! FIX DATA PATH TO WORK FROM A FILE IN THE SAME FOLDER INSTEAD OF THROUGH GOOGLE DRIVE !!!
-data_path = "/content/drive/My Drive/Customer_Segmentation/data/"
+
+data_path = "./data"
 
 rNum = 0 #number of rows
 cNum = 0 #number of columns
@@ -25,7 +26,7 @@ def ReadData():
     global cNum
     global trainingData
 
-    with open(f"{data_path}Train.csv", "r") as Xfile:
+    with open(f"{data_path}/Train.csv", "r") as Xfile:
         reader = csv.reader(Xfile)
 
         for row in reader:
@@ -323,34 +324,38 @@ def PCA(trainingData, num_components, tolerance):
 
     eigen_pairs = []
     for i in range(len(eigenvalues)):
-        eigen_pairs.append([eigenvalues[i], eigenvectors[i]])
+        eigen_pairs.append([eigenvalues[i], eigenvectors[i], i])
 
     eigen_pairs.sort(reverse=True)
 
     sorted_eigenvalues = []
     sorted_eigenvectors = []
+    sorted_eigenindexes = []
 
     for i in range(len(eigen_pairs)):
         sorted_eigenvalues.append(eigen_pairs[i][0])
         sorted_eigenvectors.append(eigen_pairs[i][1])
+        sorted_eigenindexes.append(eigen_pairs[i][2])
 
     for i in range(len(eigenvectors)):
         print(f"Eigenvector {i+1}: ", sorted_eigenvectors[i])
         print(f"Eigenvalue {i+1}: ", sorted_eigenvalues[i])
+        print(f"Eigenvalue {i+1}: ", sorted_eigenindexes[i])
         print()
 
     varianceSum = sum(sorted_eigenvalues[i] for i in range(num_components))
     print(f"The first {num_components} components account for {varianceSum*100}% of the data variance.")
     print()
 
-    return sorted_eigenvectors[:num_components], sorted_eigenvalues[:num_components]
+    return sorted_eigenvectors[:num_components], sorted_eigenvalues[:num_components], sorted_eigenindexes[:num_components]
 
 
 
+# ========================== DATA PROJECTION ===================================
 # Project the initial data points onto the principal components acquired through PCA
 def ProjectData(trainingData):
-    sorted_eigenvectors, sorted_eigenvalues = PCA(trainingData, num_components, tolerance)
-    return MatrixMultiply(trainingData, TransposeMatrix(sorted_eigenvectors))
+    sorted_eigenvectors, sorted_eigenvalues, sorted_eigenindexes = PCA(trainingData, num_components, tolerance)
+    return MatrixMultiply(trainingData, TransposeMatrix(sorted_eigenvectors)), sorted_eigenindexes
 
 
 
@@ -478,7 +483,7 @@ def BisectingKMeansClustering(trainingData, K, max_iter):
 
     # classic iterations with the obtained K clusters
     cluster_centroids = [GetClusterCentroid(cluster) for cluster in clusters] #initial K centroids
-    for _ in range(max_iter-1):
+    for _ in range(max_iter):
         clusters = assignCentroids(trainingData, cluster_centroids) #assign points to the centroids
         cluster_centroids = [GetClusterCentroid(cluster) for cluster in clusters] #get the centroids of the new clusters
 
@@ -488,11 +493,11 @@ def BisectingKMeansClustering(trainingData, K, max_iter):
 
 # ========================== DATA VISUALIZATION ===================================
 # Visualize reduced dimensions
-def PlotData(projectedData, cluster_centroids, labels = None):
+def PlotData(projectedData, cluster_centroids, labels):
     projectedData = np.array(projectedData)
     cluster_centroids = np.array(cluster_centroids)
 
-    fig = plt.figure(figsize=(8, 6))
+    fig = plt.figure(figsize=(12, 9))
     ax = fig.add_subplot(111, projection='3d')
 
     # Scatter plot
@@ -501,24 +506,25 @@ def PlotData(projectedData, cluster_centroids, labels = None):
 
     # Labels and title
     ax.set_title('3D PCA Visualization', fontsize=16)
-    ax.set_xlabel('Principal Component 1', fontsize=12)
-    ax.set_ylabel('Principal Component 2', fontsize=12)
-    ax.set_zlabel('Principal Component 3', fontsize=12)
+    ax.set_xlabel(labels[0], fontsize=10)
+    ax.set_ylabel(labels[1], fontsize=10)
+    ax.set_zlabel(labels[2], fontsize=10)
+    ax.zaxis.label.set_rotation(90)
 
     plt.show()
 
 
 
-# Interactive plot for visualizing reduced dimensions and clustering 
-def PlotData1(projectedData, cluster_centroids, labels=None):
+# Interactive plot for visualizing reduced dimensions and clustering
+def PlotData1(projectedData, cluster_centroids, labels):
     projectedData = np.array(projectedData)
     cluster_centroids = np.array(cluster_centroids)
 
     # Create scatter plot for data points
     scatter_points = go.Scatter3d(
-        x=projectedData[:, 0], 
-        y=projectedData[:, 1], 
-        z=projectedData[:, 2], 
+        x=projectedData[:, 0],
+        y=projectedData[:, 1],
+        z=projectedData[:, 2],
         mode='markers',
         marker=dict(size=5, color='blue'),
         name='Data Points'
@@ -526,9 +532,9 @@ def PlotData1(projectedData, cluster_centroids, labels=None):
 
     # Create scatter plot for centroids
     scatter_centroids = go.Scatter3d(
-        x=cluster_centroids[:, 0], 
-        y=cluster_centroids[:, 1], 
-        z=cluster_centroids[:, 2], 
+        x=cluster_centroids[:, 0],
+        y=cluster_centroids[:, 1],
+        z=cluster_centroids[:, 2],
         mode='markers',
         marker=dict(size=5, color='red', symbol='x'),
         name='Centroids'
@@ -538,9 +544,9 @@ def PlotData1(projectedData, cluster_centroids, labels=None):
     layout = go.Layout(
         title='3D PCA Visualization',
         scene=dict(
-            xaxis_title='Principal Component 1',
-            yaxis_title='Principal Component 2',
-            zaxis_title='Principal Component 3'
+            xaxis_title=labels[0],
+            yaxis_title=labels[1],
+            zaxis_title=labels[2]
         )
     )
 
@@ -608,10 +614,15 @@ print(len(cleanedData), "x", len(cleanedData[0]))
 print()
 
 # -------------------------- Projected data --------------------------
-projectedData = ProjectData(cleanedData)
+projectedData, eigen_indexes = ProjectData(cleanedData)
 print("-------------------------------- PROJECTED DATA --------------------------------")
 print("Projected data onto 3 dimensions:")
 print(projectedData)
+print()
+
+component_titles = [cleanedTitles[i] for i in eigen_indexes]
+print("Component titles:")
+print(component_titles)
 print()
 
 # -------------------------- Cluster data --------------------------
@@ -633,7 +644,7 @@ elbow_method(projectedData, cluster_nr*3)
 print("\n\n\n")
 
 # -------------------------- Visualization --------------------------
-PlotData(projectedData, cluster_centroids)
+PlotData(projectedData, cluster_centroids, component_titles)
 print("\n\n\n")
-PlotData1(projectedData, cluster_centroids)
+PlotData1(projectedData, cluster_centroids, component_titles)
 print("\n\n\n")
