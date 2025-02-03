@@ -4,10 +4,6 @@ import matplotlib.pyplot as plt
 import csv
 import plotly.graph_objects as go
 
-# Database Link -> https://www.kaggle.com/datasets/vetrirah/customer
-# Data Path (Google Drive)
-# !!! FIX DATA PATH TO WORK FROM A FILE IN THE SAME FOLDER INSTEAD OF THROUGH GOOGLE DRIVE !!!
-
 data_path = "./data"
 
 rNum = 0 #number of rows
